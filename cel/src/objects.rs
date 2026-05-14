@@ -1,4 +1,8 @@
 use crate::common::ast::{operators, EntryExpr, Expr};
+use crate::common::traits::{
+    Adder, Comparer, Container, Divider, Indexer, Iterable, Modder, Multiplier, Negator, Sizer,
+    Subtractor, Zeroer,
+};
 use crate::common::types::bool::Bool;
 use crate::common::types::*;
 use crate::common::value::Val;
@@ -392,6 +396,16 @@ pub trait Opaque: Any + OpaqueEq + AsDebug + Send + Sync {
     /// qualified name like `my.pkg.Type`).
     fn runtime_type_name(&self) -> &str;
 
+    /// Optional runtime CEL behavior for this opaque value.
+    ///
+    /// Opaque values that also implement [`Val`] can return `Some(self)` here
+    /// to participate in field selection, indexing, containment, sizing and
+    /// other interpreter-dispatched operations while still being stored as
+    /// [`Value::Opaque`].
+    fn as_val(&self) -> Option<&dyn Val> {
+        None
+    }
+
     /// Optional JSON representation (requires the `json` feature).
     ///
     /// The default implementation returns `None`, indicating that the value
@@ -425,13 +439,91 @@ impl Val for OpaqueVal {
         &self.r#type
     }
 
+    fn as_adder(&self) -> Option<&dyn Adder> {
+        self.val.as_val()?.as_adder()?;
+        Some(self)
+    }
+
+    fn as_comparer(&self) -> Option<&dyn Comparer> {
+        self.val.as_val()?.as_comparer()?;
+        Some(self)
+    }
+
+    fn as_container(&self) -> Option<&dyn Container> {
+        self.val.as_val()?.as_container()?;
+        Some(self)
+    }
+
+    fn as_divider(&self) -> Option<&dyn Divider> {
+        self.val.as_val()?.as_divider()?;
+        Some(self)
+    }
+
+    fn as_indexer(&self) -> Option<&dyn Indexer> {
+        self.val.as_val()?.as_indexer()?;
+        Some(self)
+    }
+
+    fn into_indexer(self: Box<Self>) -> Option<Box<dyn Indexer>> {
+        if self.val.as_val().is_some_and(|v| v.as_indexer().is_some()) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    fn as_iterable(&self) -> Option<&dyn Iterable> {
+        self.val.as_val()?.as_iterable()?;
+        Some(self)
+    }
+
+    fn as_modder(&self) -> Option<&dyn Modder> {
+        self.val.as_val()?.as_modder()?;
+        Some(self)
+    }
+
+    fn as_multiplier(&self) -> Option<&dyn Multiplier> {
+        self.val.as_val()?.as_multiplier()?;
+        Some(self)
+    }
+
+    fn as_negator(&self) -> Option<&dyn Negator> {
+        self.val.as_val()?.as_negator()?;
+        Some(self)
+    }
+
+    fn as_sizer(&self) -> Option<&dyn Sizer> {
+        self.val.as_val()?.as_sizer()?;
+        Some(self)
+    }
+
+    fn as_subtractor(&self) -> Option<&dyn Subtractor> {
+        self.val.as_val()?.as_subtractor()?;
+        Some(self)
+    }
+
+    fn as_zeroer(&self) -> Option<&dyn Zeroer> {
+        self.val.as_val()?.as_zeroer()?;
+        Some(self)
+    }
+
     fn equals(&self, other: &dyn Val) -> bool {
         if other.get_type() != self.get_type() {
             false
         } else {
             match other.downcast_ref::<OpaqueVal>() {
-                None => false,
-                Some(other) => self.val.opaque_eq(other.val.deref()),
+                None => self
+                    .val
+                    .as_val()
+                    .is_some_and(|delegated| delegated.equals(other)),
+                Some(other) => {
+                    if let (Some(lhs), Some(rhs)) = (self.val.as_val(), other.val.as_val()) {
+                        if lhs.equals(rhs) {
+                            return true;
+                        }
+                    }
+                    self.val.opaque_eq(other.val.deref())
+                }
             }
         }
     }
@@ -454,6 +546,129 @@ impl OpaqueVal {
 
     fn clone_inner(&self) -> Arc<dyn Opaque> {
         self.val.clone()
+    }
+}
+
+impl Adder for OpaqueVal {
+    fn add<'a>(&'a self, rhs: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_adder)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .add(rhs)
+    }
+}
+
+impl Comparer for OpaqueVal {
+    fn compare(&self, rhs: &dyn Val) -> Result<Ordering, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_comparer)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .compare(rhs)
+    }
+}
+
+impl Container for OpaqueVal {
+    fn contains(&self, value: &dyn Val) -> Result<bool, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_container)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .contains(value)
+    }
+}
+
+impl Divider for OpaqueVal {
+    fn div<'a>(&self, rhs: &'a dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_divider)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .div(rhs)
+    }
+}
+
+impl Indexer for OpaqueVal {
+    fn get<'a>(&'a self, idx: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_indexer)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .get(idx)
+    }
+
+    fn steal(self: Box<Self>, idx: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
+        self.get(idx).map(Cow::into_owned)
+    }
+}
+
+impl Iterable for OpaqueVal {
+    fn iter<'a>(&'a self) -> Box<dyn crate::common::traits::Iterator<'a> + 'a> {
+        self.val
+            .as_val()
+            .and_then(Val::as_iterable)
+            .expect("OpaqueVal::as_iterable checked delegate support")
+            .iter()
+    }
+}
+
+impl Modder for OpaqueVal {
+    fn modulo<'a>(&self, rhs: &'a dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_modder)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .modulo(rhs)
+    }
+}
+
+impl Multiplier for OpaqueVal {
+    fn mul<'a>(&self, rhs: &'a dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_multiplier)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .mul(rhs)
+    }
+}
+
+impl Negator for OpaqueVal {
+    fn negate(&self) -> Result<Box<dyn Val>, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_negator)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .negate()
+    }
+}
+
+impl Sizer for OpaqueVal {
+    fn size(&self) -> CelInt {
+        self.val
+            .as_val()
+            .and_then(Val::as_sizer)
+            .expect("OpaqueVal::as_sizer checked delegate support")
+            .size()
+    }
+}
+
+impl Subtractor for OpaqueVal {
+    fn sub<'a>(&'a self, rhs: &'_ dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+        self.val
+            .as_val()
+            .and_then(Val::as_subtractor)
+            .ok_or(ExecutionError::NoSuchOverload)?
+            .sub(rhs)
+    }
+}
+
+impl Zeroer for OpaqueVal {
+    fn is_zero_value(&self) -> bool {
+        self.val
+            .as_val()
+            .and_then(Val::as_zeroer)
+            .is_some_and(Zeroer::is_zero_value)
     }
 }
 
@@ -2068,14 +2283,18 @@ mod tests {
     }
 
     mod opaque {
+        use crate::common::traits::Indexer;
+        use crate::common::types::{CelBool, CelInt, CelString, CelUInt, Type};
+        use crate::common::value::Val;
         use crate::objects::{Map, Opaque, OpaqueVal, OptionalValue};
         use crate::parser::Parser;
         use crate::{Context, ExecutionError, FunctionContext, Program, Value};
         use serde::Serialize;
+        use std::borrow::Cow;
         use std::collections::HashMap;
         use std::fmt::Debug;
         use std::ops::Deref;
-        use std::sync::Arc;
+        use std::sync::{Arc, LazyLock};
 
         #[derive(Debug, Eq, PartialEq, Serialize)]
         struct MyStruct {
@@ -2090,6 +2309,152 @@ mod tests {
             #[cfg(feature = "json")]
             fn json(&self) -> Option<serde_json::Value> {
                 Some(serde_json::to_value(self).unwrap())
+            }
+        }
+
+        static PROTO_LIKE_TYPE: LazyLock<Type> =
+            LazyLock::new(|| Type::new_opaque_type("test.ProtoLike"));
+        static PROTO_NESTED_TYPE: LazyLock<Type> =
+            LazyLock::new(|| Type::new_opaque_type("test.ProtoLike.Nested"));
+
+        #[derive(Clone, Debug, Eq, PartialEq)]
+        struct ProtoLike {
+            id: i64,
+            name: String,
+            enabled: bool,
+            nested: ProtoLikeNested,
+        }
+
+        impl ProtoLike {
+            fn sample() -> Self {
+                Self {
+                    id: 42,
+                    name: "message-one".to_string(),
+                    enabled: true,
+                    nested: ProtoLikeNested {
+                        label: "child".to_string(),
+                        score: 7,
+                        verified: true,
+                    },
+                }
+            }
+        }
+
+        impl Opaque for ProtoLike {
+            fn runtime_type_name(&self) -> &str {
+                "test.ProtoLike"
+            }
+
+            fn as_val(&self) -> Option<&dyn Val> {
+                Some(self)
+            }
+        }
+
+        impl Val for ProtoLike {
+            fn get_type(&self) -> &Type {
+                &PROTO_LIKE_TYPE
+            }
+
+            fn as_indexer(&self) -> Option<&dyn Indexer> {
+                Some(self)
+            }
+
+            fn into_indexer(self: Box<Self>) -> Option<Box<dyn Indexer>> {
+                Some(self)
+            }
+
+            fn equals(&self, other: &dyn Val) -> bool {
+                other
+                    .downcast_ref::<Self>()
+                    .is_some_and(|other| self == other)
+            }
+
+            fn clone_as_boxed(&self) -> Box<dyn Val> {
+                Box::new(self.clone())
+            }
+        }
+
+        impl Indexer for ProtoLike {
+            fn get<'a>(&'a self, idx: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+                let field = idx
+                    .downcast_ref::<CelString>()
+                    .ok_or(ExecutionError::NoSuchOverload)?
+                    .inner();
+
+                let value: Box<dyn Val> = match field {
+                    "id" => Box::new(CelInt::from(self.id)),
+                    "name" => Box::new(CelString::from(self.name.as_str())),
+                    "enabled" => Box::new(CelBool::from(self.enabled)),
+                    "nested" => Value::Opaque(Arc::new(self.nested.clone())).try_into()?,
+                    _ => return Err(ExecutionError::NoSuchKey(Arc::new(field.to_string()))),
+                };
+                Ok(Cow::Owned(value))
+            }
+
+            fn steal(self: Box<Self>, idx: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
+                self.get(idx).map(Cow::into_owned)
+            }
+        }
+
+        #[derive(Clone, Debug, Eq, PartialEq)]
+        struct ProtoLikeNested {
+            label: String,
+            score: u64,
+            verified: bool,
+        }
+
+        impl Opaque for ProtoLikeNested {
+            fn runtime_type_name(&self) -> &str {
+                "test.ProtoLike.Nested"
+            }
+
+            fn as_val(&self) -> Option<&dyn Val> {
+                Some(self)
+            }
+        }
+
+        impl Val for ProtoLikeNested {
+            fn get_type(&self) -> &Type {
+                &PROTO_NESTED_TYPE
+            }
+
+            fn as_indexer(&self) -> Option<&dyn Indexer> {
+                Some(self)
+            }
+
+            fn into_indexer(self: Box<Self>) -> Option<Box<dyn Indexer>> {
+                Some(self)
+            }
+
+            fn equals(&self, other: &dyn Val) -> bool {
+                other
+                    .downcast_ref::<Self>()
+                    .is_some_and(|other| self == other)
+            }
+
+            fn clone_as_boxed(&self) -> Box<dyn Val> {
+                Box::new(self.clone())
+            }
+        }
+
+        impl Indexer for ProtoLikeNested {
+            fn get<'a>(&'a self, idx: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
+                let field = idx
+                    .downcast_ref::<CelString>()
+                    .ok_or(ExecutionError::NoSuchOverload)?
+                    .inner();
+
+                let value: Box<dyn Val> = match field {
+                    "label" => Box::new(CelString::from(self.label.as_str())),
+                    "score" => Box::new(CelUInt::from(self.score)),
+                    "verified" => Box::new(CelBool::from(self.verified)),
+                    _ => return Err(ExecutionError::NoSuchKey(Arc::new(field.to_string()))),
+                };
+                Ok(Cow::Owned(value))
+            }
+
+            fn steal(self: Box<Self>, idx: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
+                self.get(idx).map(Cow::into_owned)
             }
         }
 
@@ -2132,6 +2497,53 @@ mod tests {
             assert_eq!(
                 Ok(Value::String(Arc::new("value".into()))),
                 prog.execute(&ctx)
+            );
+        }
+
+        #[test]
+        fn opaque_as_val_resolves_proto_like_fields() {
+            let mut ctx = Context::default();
+            let message = ProtoLike::sample();
+            ctx.add_variable_from_value("msg", Value::Opaque(Arc::new(message.clone())));
+
+            let cases = [
+                r#"msg.id == 42"#,
+                r#"msg.name == "message-one""#,
+                r#"msg.enabled"#,
+                r#"msg.nested.label == "child""#,
+                r#"msg.nested.score == 7u"#,
+                r#"msg.nested.verified"#,
+                r#"msg.nested == msg.nested"#,
+            ];
+
+            for expr in cases {
+                assert_eq!(
+                    Program::compile(expr).unwrap().execute(&ctx),
+                    Ok(Value::Bool(true)),
+                    "{expr}"
+                );
+            }
+
+            assert_eq!(
+                Program::compile("msg.nested").unwrap().execute(&ctx),
+                Ok(Value::Opaque(Arc::new(message.nested)))
+            );
+        }
+
+        #[test]
+        fn opaque_as_val_supports_owned_indexing() {
+            fn make_msg(_: &FunctionContext) -> Result<Value, ExecutionError> {
+                Ok(Value::Opaque(Arc::new(ProtoLike::sample())))
+            }
+
+            let mut ctx = Context::default();
+            ctx.add_function("makeMsg", make_msg);
+
+            assert_eq!(
+                Program::compile(r#"makeMsg()["nested"]["label"] == "child""#)
+                    .unwrap()
+                    .execute(&ctx),
+                Ok(Value::Bool(true))
             );
         }
 
