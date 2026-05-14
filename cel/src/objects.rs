@@ -440,28 +440,23 @@ impl Val for OpaqueVal {
     }
 
     fn as_adder(&self) -> Option<&dyn Adder> {
-        self.val.as_val()?.as_adder()?;
-        Some(self)
+        self.val.as_val()?.as_adder()
     }
 
     fn as_comparer(&self) -> Option<&dyn Comparer> {
-        self.val.as_val()?.as_comparer()?;
-        Some(self)
+        self.val.as_val()?.as_comparer()
     }
 
     fn as_container(&self) -> Option<&dyn Container> {
-        self.val.as_val()?.as_container()?;
-        Some(self)
+        self.val.as_val()?.as_container()
     }
 
     fn as_divider(&self) -> Option<&dyn Divider> {
-        self.val.as_val()?.as_divider()?;
-        Some(self)
+        self.val.as_val()?.as_divider()
     }
 
     fn as_indexer(&self) -> Option<&dyn Indexer> {
-        self.val.as_val()?.as_indexer()?;
-        Some(self)
+        self.val.as_val()?.as_indexer()
     }
 
     fn into_indexer(self: Box<Self>) -> Option<Box<dyn Indexer>> {
@@ -473,38 +468,31 @@ impl Val for OpaqueVal {
     }
 
     fn as_iterable(&self) -> Option<&dyn Iterable> {
-        self.val.as_val()?.as_iterable()?;
-        Some(self)
+        self.val.as_val()?.as_iterable()
     }
 
     fn as_modder(&self) -> Option<&dyn Modder> {
-        self.val.as_val()?.as_modder()?;
-        Some(self)
+        self.val.as_val()?.as_modder()
     }
 
     fn as_multiplier(&self) -> Option<&dyn Multiplier> {
-        self.val.as_val()?.as_multiplier()?;
-        Some(self)
+        self.val.as_val()?.as_multiplier()
     }
 
     fn as_negator(&self) -> Option<&dyn Negator> {
-        self.val.as_val()?.as_negator()?;
-        Some(self)
+        self.val.as_val()?.as_negator()
     }
 
     fn as_sizer(&self) -> Option<&dyn Sizer> {
-        self.val.as_val()?.as_sizer()?;
-        Some(self)
+        self.val.as_val()?.as_sizer()
     }
 
     fn as_subtractor(&self) -> Option<&dyn Subtractor> {
-        self.val.as_val()?.as_subtractor()?;
-        Some(self)
+        self.val.as_val()?.as_subtractor()
     }
 
     fn as_zeroer(&self) -> Option<&dyn Zeroer> {
-        self.val.as_val()?.as_zeroer()?;
-        Some(self)
+        self.val.as_val()?.as_zeroer()
     }
 
     fn equals(&self, other: &dyn Val) -> bool {
@@ -549,46 +537,6 @@ impl OpaqueVal {
     }
 }
 
-impl Adder for OpaqueVal {
-    fn add<'a>(&'a self, rhs: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_adder)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .add(rhs)
-    }
-}
-
-impl Comparer for OpaqueVal {
-    fn compare(&self, rhs: &dyn Val) -> Result<Ordering, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_comparer)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .compare(rhs)
-    }
-}
-
-impl Container for OpaqueVal {
-    fn contains(&self, value: &dyn Val) -> Result<bool, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_container)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .contains(value)
-    }
-}
-
-impl Divider for OpaqueVal {
-    fn div<'a>(&self, rhs: &'a dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_divider)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .div(rhs)
-    }
-}
-
 impl Indexer for OpaqueVal {
     fn get<'a>(&'a self, idx: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
         self.val
@@ -600,75 +548,6 @@ impl Indexer for OpaqueVal {
 
     fn steal(self: Box<Self>, idx: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
         self.get(idx).map(Cow::into_owned)
-    }
-}
-
-impl Iterable for OpaqueVal {
-    fn iter<'a>(&'a self) -> Box<dyn crate::common::traits::Iterator<'a> + 'a> {
-        self.val
-            .as_val()
-            .and_then(Val::as_iterable)
-            .expect("OpaqueVal::as_iterable checked delegate support")
-            .iter()
-    }
-}
-
-impl Modder for OpaqueVal {
-    fn modulo<'a>(&self, rhs: &'a dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_modder)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .modulo(rhs)
-    }
-}
-
-impl Multiplier for OpaqueVal {
-    fn mul<'a>(&self, rhs: &'a dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_multiplier)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .mul(rhs)
-    }
-}
-
-impl Negator for OpaqueVal {
-    fn negate(&self) -> Result<Box<dyn Val>, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_negator)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .negate()
-    }
-}
-
-impl Sizer for OpaqueVal {
-    fn size(&self) -> CelInt {
-        self.val
-            .as_val()
-            .and_then(Val::as_sizer)
-            .expect("OpaqueVal::as_sizer checked delegate support")
-            .size()
-    }
-}
-
-impl Subtractor for OpaqueVal {
-    fn sub<'a>(&'a self, rhs: &'_ dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        self.val
-            .as_val()
-            .and_then(Val::as_subtractor)
-            .ok_or(ExecutionError::NoSuchOverload)?
-            .sub(rhs)
-    }
-}
-
-impl Zeroer for OpaqueVal {
-    fn is_zero_value(&self) -> bool {
-        self.val
-            .as_val()
-            .and_then(Val::as_zeroer)
-            .is_some_and(Zeroer::is_zero_value)
     }
 }
 
