@@ -2,7 +2,7 @@ use crate::common::traits::{self, Adder, Comparer, Sizer, Zeroer};
 use crate::common::types::{CelBool, CelBytes, CelDouble, CelInt, CelUInt, Kind, Type};
 #[cfg(feature = "chrono")]
 use crate::common::types::{CelDuration, CelTimestamp};
-use crate::common::value::{Downcast, Val};
+use crate::common::value::Val;
 use crate::ExecutionError;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -31,6 +31,10 @@ impl Deref for String {
 }
 
 impl Val for String {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::STRING_TYPE
     }
@@ -199,29 +203,38 @@ fn string<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, Execution
     let mut args = args;
     let arg = args.remove(0).into_owned();
     let ret: Result<Box<String>, Box<dyn Val>> = match arg.get_type().kind() {
-        Kind::String => arg.downcast::<String>(),
-        Kind::Int => arg
-            .downcast::<CelInt>()
-            .map(|arg| Box::new(String::from(arg.to_string()))),
-        Kind::UInt => arg
-            .downcast::<CelUInt>()
-            .map(|arg| Box::new(String::from(arg.to_string()))),
-        Kind::Double => arg
-            .downcast::<CelDouble>()
-            .map(|arg| Box::new(String::from(arg.to_string()))),
-        Kind::Bytes => arg.downcast::<CelBytes>().map(|arg| {
-            Box::new(String::from(
+        Kind::String => match arg.downcast_ref::<String>() {
+            Some(arg) => Ok(Box::new(arg.clone())),
+            None => Err(arg),
+        },
+        Kind::Int => match arg.downcast_ref::<CelInt>() {
+            Some(arg) => Ok(Box::new(String::from(arg.to_string()))),
+            None => Err(arg),
+        },
+        Kind::UInt => match arg.downcast_ref::<CelUInt>() {
+            Some(arg) => Ok(Box::new(String::from(arg.to_string()))),
+            None => Err(arg),
+        },
+        Kind::Double => match arg.downcast_ref::<CelDouble>() {
+            Some(arg) => Ok(Box::new(String::from(arg.to_string()))),
+            None => Err(arg),
+        },
+        Kind::Bytes => match arg.downcast_ref::<CelBytes>() {
+            Some(arg) => Ok(Box::new(String::from(
                 StdString::from_utf8_lossy(arg.inner()).as_ref(),
-            ))
-        }),
+            ))),
+            None => Err(arg),
+        },
         #[cfg(feature = "chrono")]
-        Kind::Timestamp => arg
-            .downcast::<CelTimestamp>()
-            .map(|ts| Box::new(String::from(ts.inner().to_rfc3339()))),
+        Kind::Timestamp => match arg.downcast_ref::<CelTimestamp>() {
+            Some(ts) => Ok(Box::new(String::from(ts.inner().to_rfc3339()))),
+            None => Err(arg),
+        },
         #[cfg(feature = "chrono")]
-        Kind::Duration => arg
-            .downcast::<CelDuration>()
-            .map(|arg| Box::new(String::from(crate::duration::format_duration(arg.inner())))),
+        Kind::Duration => match arg.downcast_ref::<CelDuration>() {
+            Some(arg) => Ok(Box::new(String::from(crate::duration::format_duration(arg.inner())))),
+            None => Err(arg),
+        },
         _ => Err(arg),
     };
     match ret {

@@ -30,6 +30,10 @@ impl Deref for Bool {
 }
 
 impl Val for Bool {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::BOOL_TYPE
     }

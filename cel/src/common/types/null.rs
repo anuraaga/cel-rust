@@ -6,6 +6,10 @@ use crate::common::value::Val;
 pub struct Null;
 
 impl Val for Null {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::NULL_TYPE
     }

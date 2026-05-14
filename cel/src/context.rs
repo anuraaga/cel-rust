@@ -7,6 +7,11 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+pub enum StoredValue<'a> {
+    Owned(Box<dyn Val>),
+    Borrowed(&'a dyn Val),
+}
+
 /// Context is a collection of variables and functions that can be used
 /// by the interpreter to resolve expressions.
 ///
@@ -35,13 +40,13 @@ use std::sync::Arc;
 pub enum Context<'a> {
     Root {
         functions: FunctionRegistry,
-        variables: BTreeMap<String, Box<dyn Val>>,
+        variables: BTreeMap<String, StoredValue<'a>>,
         resolver: Option<&'a dyn VariableResolver>,
         env: Arc<Env>,
     },
     Child {
         parent: &'a Context<'a>,
-        variables: BTreeMap<String, Box<dyn Val>>,
+        variables: BTreeMap<String, StoredValue<'a>>,
         resolver: Option<&'a dyn VariableResolver>,
     },
 }
@@ -60,12 +65,12 @@ impl<'a> Context<'a> {
             Context::Root { variables, .. } => {
                 let value = value.try_into_value()?;
                 let value: Box<dyn Val> = value.try_into().unwrap();
-                variables.insert(name.into(), value);
+                variables.insert(name.into(), StoredValue::Owned(value));
             }
             Context::Child { variables, .. } => {
                 let value = value.try_into_value()?;
                 let value: Box<dyn Val> = value.try_into().unwrap();
-                variables.insert(name.into(), value);
+                variables.insert(name.into(), StoredValue::Owned(value));
             }
         }
         Ok(())
@@ -80,12 +85,27 @@ impl<'a> Context<'a> {
             Context::Root { variables, .. } => {
                 let value = value.into();
                 let value: Box<dyn Val> = value.try_into().unwrap();
-                variables.insert(name.into(), value);
+                variables.insert(name.into(), StoredValue::Owned(value));
             }
             Context::Child { variables, .. } => {
                 let value = value.into();
                 let value: Box<dyn Val> = value.try_into().unwrap();
-                variables.insert(name.into(), value);
+                variables.insert(name.into(), StoredValue::Owned(value));
+            }
+        }
+    }
+
+    pub fn add_variable_ref<S, V>(&mut self, name: S, value: &'a V)
+    where
+        S: Into<String>,
+        V: Val + 'a,
+    {
+        match self {
+            Context::Root { variables, .. } => {
+                variables.insert(name.into(), StoredValue::Borrowed(value));
+            }
+            Context::Child { variables, .. } => {
+                variables.insert(name.into(), StoredValue::Borrowed(value));
             }
         }
     }
@@ -96,10 +116,10 @@ impl<'a> Context<'a> {
     {
         match self {
             Context::Root { variables, .. } => {
-                variables.insert(name.into(), value);
+                variables.insert(name.into(), StoredValue::Owned(value));
             }
             Context::Child { variables, .. } => {
-                variables.insert(name.into(), value);
+                variables.insert(name.into(), StoredValue::Owned(value));
             }
         }
     }
@@ -133,7 +153,10 @@ impl<'a> Context<'a> {
                 .or_else(|| {
                     variables
                         .get(name)
-                        .map(|b| Cow::<dyn Val>::Borrowed(b.as_ref()))
+                        .map(|value| match value {
+                            StoredValue::Owned(value) => Cow::<dyn Val>::Borrowed(value.as_ref()),
+                            StoredValue::Borrowed(value) => Cow::<dyn Val>::Borrowed(*value),
+                        })
                         .or_else(|| parent.get_variable(name))
                 }),
             Context::Root {
@@ -148,7 +171,10 @@ impl<'a> Context<'a> {
                 .or_else(|| {
                     variables
                         .get(name)
-                        .map(|v| Cow::<dyn Val>::Borrowed(v.as_ref()))
+                        .map(|value| match value {
+                            StoredValue::Owned(value) => Cow::<dyn Val>::Borrowed(value.as_ref()),
+                            StoredValue::Borrowed(value) => Cow::<dyn Val>::Borrowed(*value),
+                        })
                 }),
         }
     }

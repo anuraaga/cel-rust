@@ -34,6 +34,10 @@ impl Deref for DefaultMap {
 }
 
 impl Val for DefaultMap {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &types::MAP_TYPE
     }

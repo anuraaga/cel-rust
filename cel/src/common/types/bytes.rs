@@ -1,6 +1,6 @@
 use crate::common::traits::{Sizer, Zeroer};
 use crate::common::types::{CelInt, CelString, Type};
-use crate::common::value::{Downcast, Val};
+use crate::common::value::Val;
 use crate::Value;
 use crate::{common::traits, ExecutionError};
 use std::borrow::Cow;
@@ -29,6 +29,10 @@ impl Deref for Bytes {
 }
 
 impl Val for Bytes {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::BYTES_TYPE
     }
@@ -137,13 +141,13 @@ fn bytes_to_bytes<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, E
 fn string_to_bytes<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionError> {
     let mut args = args;
     let arg = args.remove(0).into_owned();
-    match arg.downcast::<CelString>() {
-        Ok(arg) => {
-            let value = arg.into_inner().into_bytes();
+    match arg.downcast_ref::<CelString>() {
+        Some(arg) => {
+            let value = arg.inner().as_bytes().to_vec();
             Ok(Cow::<dyn Val>::Owned(Box::new(Bytes::from(value))))
         }
-        Err(e) => Err(ExecutionError::UnexpectedType {
-            got: e.get_type().name().to_owned(),
+        None => Err(ExecutionError::UnexpectedType {
+            got: arg.get_type().name().to_owned(),
             want: "Bytes".to_owned(),
         }),
     }

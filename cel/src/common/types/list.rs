@@ -3,7 +3,6 @@ use crate::common::types::{CelInt, CelUInt, Kind, Type};
 use crate::common::value::Val;
 use crate::common::{traits, types};
 use crate::ExecutionError;
-use std::any::Any;
 use std::borrow::Cow;
 use std::ops::Deref;
 
@@ -37,6 +36,10 @@ impl Deref for DefaultList {
 }
 
 impl Val for DefaultList {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &types::LIST_TYPE
     }
@@ -214,7 +217,7 @@ impl<'a> TryFrom<&'a dyn Val> for &'a [Box<dyn Val>] {
     type Error = &'a dyn Val;
 
     fn try_from(value: &'a dyn Val) -> Result<Self, Self::Error> {
-        if let Some(list) = <dyn Any>::downcast_ref::<DefaultList>(value) {
+        if let Some(list) = value.downcast_ref::<DefaultList>() {
             return Ok(list.inner());
         }
         Err(value)

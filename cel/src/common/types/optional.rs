@@ -24,6 +24,10 @@ impl OptionalInternal {
 }
 
 impl Val for Optional {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::OPTIONAL_TYPE
     }
@@ -114,7 +118,7 @@ fn optional_of<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, Exec
     let mut args = args;
     let value = args.remove(0);
     Ok(Cow::<dyn Val>::Owned(Box::new(Optional::of(
-        value.into_owned(),
+        value.as_ref().clone_as_boxed(),
     ))))
 }
 
@@ -131,11 +135,12 @@ fn optional_value<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, E
     // TODO: This can be optimized to avoid cloning and "just" pass the `Cow`
     // but we either need to deal with the `Arc` case or wait until that's all ripped out!
     let mut args = args;
-    args.remove(0)
+    let optional = args.remove(0);
+    optional
         .downcast_ref::<Optional>()
         .expect("must be `CelOptional`")
         .option()
-        .map(|v| Cow::Owned(v.to_owned()))
+        .map(|v| Cow::Owned(v.clone_as_boxed()))
         .ok_or_else(|| ExecutionError::function_error("value", "optional.none() dereference"))
 }
 
@@ -168,12 +173,12 @@ fn optional_or_value<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>
     // but we either need to deal with the `Arc` case or wait until that's all ripped out!
     let mut args = args;
     let other = args.remove(1);
-    Ok(args
-        .remove(0)
+    let optional = args.remove(0);
+    Ok(optional
         .downcast_ref::<Optional>()
         .expect("must be `CelOptional`")
         .option()
-        .map(|v| Cow::Owned(v.to_owned()))
+        .map(|v| Cow::Owned(v.clone_as_boxed()))
         .unwrap_or(other))
 }
 

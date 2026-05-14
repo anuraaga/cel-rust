@@ -351,12 +351,12 @@ impl Type {
 /// Will return `Result::Ok` if the type check succeeded with the actual Box to the
 /// `Box<T>`. `Result::Err` with the `Box<dyn Val>` back to the caller should the type check
 /// fail.
-fn cast_boxed<T: Val>(value: Box<dyn Val>) -> Result<Box<T>, Box<dyn Val>> {
-    if <dyn Any>::is::<T>(&*value) {
+fn cast_boxed<T: Val + Any>(value: Box<dyn Val>) -> Result<Box<T>, Box<dyn Val>> {
+    if value.downcast_ref::<T>().is_some() {
         let temp_container = &mut Some(value);
         // SAFETY: just checked whether we are pointing to the correct type, and we can rely on
-        // that check for memory safety because we have implemented Any for all types; no other
-        // impls can exist as they would conflict with our impl.
+        // that check for memory safety because the concrete type reported through `as_any`
+        // matches `T` and no other impls can exist with the same concrete type.
         let temp_container = unsafe { &mut *(temp_container as *mut _ as *mut Option<Box<T>>) };
         return Ok(temp_container.take().unwrap());
     }
@@ -366,7 +366,7 @@ fn cast_boxed<T: Val>(value: Box<dyn Val>) -> Result<Box<T>, Box<dyn Val>> {
 type UnaryFn<A> = fn(&A) -> Result<Box<dyn Val>, ExecutionError>;
 type BinaryFn<A, B> = fn(&A, &B) -> Result<Box<dyn Val>, ExecutionError>;
 
-fn unary_fn<'a, A: Val>(
+fn unary_fn<'a, A: Val + 'static>(
     args: Vec<Cow<'a, dyn Val>>,
     type_a: Type,
     func: UnaryFn<A>,
@@ -381,7 +381,7 @@ fn unary_fn<'a, A: Val>(
     }
 }
 
-fn binary_fn<'a, A: Val, B: Val>(
+fn binary_fn<'a, A: Val + 'static, B: Val + 'static>(
     args: Vec<Cow<'a, dyn Val>>,
     type_a: Type,
     type_b: Type,

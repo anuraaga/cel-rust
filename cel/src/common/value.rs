@@ -2,11 +2,20 @@ use crate::common::traits::{
     Adder, Comparer, Container, Divider, Indexer, Iterable, Modder, Multiplier, Negator, Sizer,
     Subtractor, Zeroer,
 };
+use crate::objects::Opaque;
 use crate::common::types::Type;
 use std::any::Any;
 use std::fmt::Debug;
 
-pub trait Val: Any + Debug + Send + Sync {
+pub trait Val: Debug + Send + Sync {
+    fn as_any(&self) -> Option<&dyn Any> {
+        None
+    }
+
+    fn as_opaque(&self) -> Option<&dyn Opaque> {
+        None
+    }
+
     fn get_type(&self) -> &Type;
 
     fn as_adder(&self) -> Option<&dyn Adder> {
@@ -68,31 +77,14 @@ pub trait Val: Any + Debug + Send + Sync {
     fn clone_as_boxed(&self) -> Box<dyn Val>;
 }
 
-impl dyn Val {
-    pub fn downcast_ref<T: Val>(&self) -> Option<&T> {
-        <dyn Any>::downcast_ref::<T>(self)
+impl dyn Val + '_ {
+    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        self.as_any()?.downcast_ref::<T>()
     }
 }
 
-pub trait Downcast {
-    type Error;
-
-    fn downcast<T: Val>(self) -> Result<Box<T>, Self::Error>;
-}
-
-impl Downcast for Box<dyn Val> {
-    type Error = Self;
-
-    fn downcast<T: Val>(self) -> Result<Box<T>, Self> {
-        if <dyn Any + 'static>::is::<T>(self.as_ref()) {
-            return Ok(<Box<dyn Any>>::downcast::<T>(self).expect("we just tested it is!"));
-        }
-        Err(self)
-    }
-}
-
-impl ToOwned for dyn Val {
-    type Owned = Box<dyn Val>;
+impl<'a> ToOwned for dyn Val + 'a {
+    type Owned = Box<dyn Val + 'a>;
 
     fn to_owned(&self) -> Self::Owned {
         self.clone_as_boxed()
@@ -111,7 +103,6 @@ impl Eq for dyn Val {}
 mod test {
     use crate::common::types;
     use crate::common::types::CelString;
-    use crate::common::value::Downcast;
     use crate::common::value::Val;
     use std::borrow::Cow;
 
@@ -131,8 +122,7 @@ mod test {
         assert!(test(borrowed.clone().as_ref()));
         assert_eq!(cow.downcast_ref::<CelString>().unwrap().inner(), "cel");
         let boxed = cow.into_owned();
-        let s: CelString = *boxed.downcast::<CelString>().unwrap();
-        let s: String = s.into();
+        let s = boxed.downcast_ref::<CelString>().unwrap().inner().to_string();
         assert_eq!(s.as_str(), "cel");
     }
 }

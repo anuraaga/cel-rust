@@ -1,6 +1,6 @@
 use crate::common::traits::{Adder, Comparer, Divider, Multiplier, Negator, Subtractor, Zeroer};
 use crate::common::types::{CelInt, CelString, CelUInt, Kind, Type};
-use crate::common::value::{Downcast, Val};
+use crate::common::value::Val;
 use crate::{ExecutionError, Value};
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -28,6 +28,10 @@ impl Deref for Double {
 }
 
 impl Val for Double {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::DOUBLE_TYPE
     }
@@ -200,16 +204,21 @@ fn double<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, Execution
     let mut args = args;
     let arg = args.remove(0).into_owned();
     let ret: Result<Box<Double>, Box<dyn Val>> = match arg.get_type().kind() {
-        Kind::Double => arg.downcast::<Double>(),
-        Kind::Int => arg
-            .downcast::<CelInt>()
-            .map(|arg| Box::new(Double::from(*arg.inner() as f64))),
-        Kind::UInt => arg
-            .downcast::<CelUInt>()
-            .map(|arg| Box::new(Double::from(*arg.inner() as f64))),
-        Kind::String => match arg.downcast::<CelString>() {
-            Err(arg) => Err(arg),
-            Ok(arg) => match arg.inner().parse::<f64>() {
+        Kind::Double => match arg.downcast_ref::<Double>() {
+            Some(arg) => Ok(Box::new(*arg)),
+            None => Err(arg),
+        },
+        Kind::Int => match arg.downcast_ref::<CelInt>() {
+            Some(arg) => Ok(Box::new(Double::from(*arg.inner() as f64))),
+            None => Err(arg),
+        },
+        Kind::UInt => match arg.downcast_ref::<CelUInt>() {
+            Some(arg) => Ok(Box::new(Double::from(*arg.inner() as f64))),
+            None => Err(arg),
+        },
+        Kind::String => match arg.downcast_ref::<CelString>() {
+            None => Err(arg),
+            Some(arg) => match arg.inner().parse::<f64>() {
                 Ok(arg) => Ok(Box::new(Double::from(arg))),
                 Err(e) => {
                     return Err(ExecutionError::FunctionError {

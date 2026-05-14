@@ -23,6 +23,10 @@ impl Timestamp {
 }
 
 impl Val for Timestamp {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::TIMESTAMP_TYPE
     }

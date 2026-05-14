@@ -1,7 +1,7 @@
 use crate::common::traits::Negator;
 use crate::common::traits::{self, Comparer};
 use crate::common::types::{CelDouble, CelString, CelUInt, Kind, Type};
-use crate::common::value::{Downcast, Val};
+use crate::common::value::Val;
 use crate::ExecutionError;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -29,6 +29,10 @@ impl Deref for Int {
 }
 
 impl Val for Int {
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     fn get_type(&self) -> &Type {
         &super::INT_TYPE
     }
@@ -230,16 +234,21 @@ fn int<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionErr
     let mut args = args;
     let arg = args.remove(0).into_owned();
     let ret: Result<Box<Int>, Box<dyn Val>> = match arg.get_type().kind() {
-        Kind::Int => arg.downcast::<Int>(),
-        Kind::UInt => arg
-            .downcast::<CelUInt>()
-            .map(|arg| Box::new(Int::from(*arg.inner() as i64))),
-        Kind::Double => arg
-            .downcast::<CelDouble>()
-            .map(|arg| Box::new(Int::from(*arg.inner() as i64))),
-        Kind::String => match arg.downcast::<CelString>() {
-            Err(arg) => Err(arg),
-            Ok(arg) => match arg.inner().parse::<i64>() {
+        Kind::Int => match arg.downcast_ref::<Int>() {
+            Some(arg) => Ok(Box::new(*arg)),
+            None => Err(arg),
+        },
+        Kind::UInt => match arg.downcast_ref::<CelUInt>() {
+            Some(arg) => Ok(Box::new(Int::from(*arg.inner() as i64))),
+            None => Err(arg),
+        },
+        Kind::Double => match arg.downcast_ref::<CelDouble>() {
+            Some(arg) => Ok(Box::new(Int::from(*arg.inner() as i64))),
+            None => Err(arg),
+        },
+        Kind::String => match arg.downcast_ref::<CelString>() {
+            None => Err(arg),
+            Some(arg) => match arg.inner().parse::<i64>() {
                 Ok(arg) => Ok(Box::new(Int::from(arg))),
                 Err(e) => {
                     return Err(ExecutionError::FunctionError {

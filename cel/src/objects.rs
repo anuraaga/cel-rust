@@ -406,6 +406,14 @@ pub trait Opaque: Any + OpaqueEq + AsDebug + Send + Sync {
         None
     }
 
+    /// Optional owned representation for borrowed opaque values.
+    ///
+    /// This is used when a borrowed opaque value needs to cross an owned CEL
+    /// boundary, such as the final `Value` returned from evaluation.
+    fn to_owned_opaque(&self) -> Option<Arc<dyn Opaque>> {
+        None
+    }
+
     /// Optional JSON representation (requires the `json` feature).
     ///
     /// The default implementation returns `None`, indicating that the value
@@ -435,6 +443,14 @@ impl Debug for OpaqueVal {
 }
 
 impl Val for OpaqueVal {
+    fn as_any(&self) -> Option<&dyn Any> {
+        Some(self)
+    }
+
+    fn as_opaque(&self) -> Option<&dyn Opaque> {
+        Some(self.val.as_ref())
+    }
+
     fn get_type(&self) -> &Type {
         &self.r#type
     }
@@ -547,7 +563,7 @@ impl Indexer for OpaqueVal {
     }
 
     fn steal(self: Box<Self>, idx: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
-        self.get(idx).map(Cow::into_owned)
+        self.get(idx).map(|value| value.as_ref().clone_as_boxed())
     }
 }
 
@@ -994,7 +1010,16 @@ impl TryFrom<&dyn Val> for Value {
                 }))
             }
             Kind::Opaque => Ok(Value::Opaque(match v.downcast_ref::<CelOptional>() {
-                None => v.downcast_ref::<OpaqueVal>().unwrap().clone_inner(),
+                None => match v.downcast_ref::<OpaqueVal>() {
+                    Some(opaque) => opaque.clone_inner(),
+                    None => v
+                        .as_opaque()
+                        .and_then(Opaque::to_owned_opaque)
+                        .ok_or_else(|| ExecutionError::UnexpectedType {
+                            got: v.get_type().name().to_string(),
+                            want: "owned opaque value".to_string(),
+                        })?,
+                },
                 Some(opt) => {
                     let opt: Option<Result<Value, _>> = opt.option().map(|v| v.try_into());
                     match opt {
@@ -1154,16 +1179,14 @@ impl Value {
                             };
                         }
                         operators::EQUALS => {
-                            return Ok(bool(
-                                Value::resolve_val(&call.args[0], ctx)?
-                                    .eq(&Value::resolve_val(&call.args[1], ctx)?),
-                            ))
+                            let lhs = own_cow(Value::resolve_val(&call.args[0], ctx)?);
+                            let rhs = own_cow(Value::resolve_val(&call.args[1], ctx)?);
+                            return Ok(bool(lhs.eq(&rhs)));
                         }
                         operators::NOT_EQUALS => {
-                            return Ok(bool(
-                                Value::resolve_val(&call.args[0], ctx)?
-                                    .ne(&Value::resolve_val(&call.args[1], ctx)?),
-                            ))
+                            let lhs = own_cow(Value::resolve_val(&call.args[0], ctx)?);
+                            let rhs = own_cow(Value::resolve_val(&call.args[1], ctx)?);
+                            return Ok(bool(lhs.ne(&rhs)));
                         }
                         operators::INDEX | operators::OPT_INDEX => {
                             let mut is_optional = call.func_name == operators::OPT_INDEX;
@@ -1249,83 +1272,78 @@ impl Value {
                         operators::ADD => {
                             let lhs = Value::resolve_val(&call.args[0], ctx)?;
                             let rhs = Value::resolve_val(&call.args[1], ctx)?;
-                            return Ok(Cow::Owned(
-                                lhs.as_ref()
-                                    .as_adder()
-                                    .ok_or_else(|| {
-                                        ExecutionError::UnsupportedBinaryOperator(
-                                            "add",
-                                            lhs.as_ref().try_into().unwrap_or(Value::Null),
-                                            rhs.as_ref().try_into().unwrap_or(Value::Null),
-                                        )
-                                    })?
-                                    .add(rhs.as_ref())?
-                                    .into_owned(),
-                            ));
+                            let value = lhs
+                                .as_ref()
+                                .as_adder()
+                                .ok_or_else(|| {
+                                    ExecutionError::UnsupportedBinaryOperator(
+                                        "add",
+                                        lhs.as_ref().try_into().unwrap_or(Value::Null),
+                                        rhs.as_ref().try_into().unwrap_or(Value::Null),
+                                    )
+                                })?
+                                .add(rhs.as_ref())?;
+                            return Ok(Cow::Owned(own_cow(value)));
                         }
                         operators::SUBSTRACT => {
                             let lhs = Value::resolve_val(&call.args[0], ctx)?;
                             let rhs = Value::resolve_val(&call.args[1], ctx)?;
-                            return Ok(Cow::Owned(
-                                lhs.as_subtractor()
-                                    .ok_or_else(|| {
-                                        ExecutionError::UnsupportedBinaryOperator(
-                                            "sub",
-                                            lhs.as_ref().try_into().unwrap_or(Value::Null),
-                                            rhs.as_ref().try_into().unwrap_or(Value::Null),
-                                        )
-                                    })?
-                                    .sub(rhs.as_ref())?
-                                    .into_owned(),
-                            ));
+                            let value = lhs
+                                .as_subtractor()
+                                .ok_or_else(|| {
+                                    ExecutionError::UnsupportedBinaryOperator(
+                                        "sub",
+                                        lhs.as_ref().try_into().unwrap_or(Value::Null),
+                                        rhs.as_ref().try_into().unwrap_or(Value::Null),
+                                    )
+                                })?
+                                .sub(rhs.as_ref())?;
+                            return Ok(Cow::Owned(own_cow(value)));
                         }
                         operators::DIVIDE => {
                             let lhs = Value::resolve_val(&call.args[0], ctx)?;
                             let rhs = Value::resolve_val(&call.args[1], ctx)?;
-                            return Ok(Cow::Owned(
-                                lhs.as_divider()
-                                    .ok_or_else(|| {
-                                        ExecutionError::UnsupportedBinaryOperator(
-                                            "div",
-                                            lhs.as_ref().try_into().unwrap_or(Value::Null),
-                                            rhs.as_ref().try_into().unwrap_or(Value::Null),
-                                        )
-                                    })?
-                                    .div(rhs.as_ref())?
-                                    .into_owned(),
-                            ));
+                            let value = lhs
+                                .as_divider()
+                                .ok_or_else(|| {
+                                    ExecutionError::UnsupportedBinaryOperator(
+                                        "div",
+                                        lhs.as_ref().try_into().unwrap_or(Value::Null),
+                                        rhs.as_ref().try_into().unwrap_or(Value::Null),
+                                    )
+                                })?
+                                .div(rhs.as_ref())?;
+                            return Ok(Cow::Owned(own_cow(value)));
                         }
                         operators::MULTIPLY => {
                             let lhs = Value::resolve_val(&call.args[0], ctx)?;
                             let rhs = Value::resolve_val(&call.args[1], ctx)?;
-                            return Ok(Cow::Owned(
-                                lhs.as_multiplier()
-                                    .ok_or_else(|| {
-                                        ExecutionError::UnsupportedBinaryOperator(
-                                            "mul",
-                                            lhs.as_ref().try_into().unwrap_or(Value::Null),
-                                            rhs.as_ref().try_into().unwrap_or(Value::Null),
-                                        )
-                                    })?
-                                    .mul(rhs.as_ref())?
-                                    .into_owned(),
-                            ));
+                            let value = lhs
+                                .as_multiplier()
+                                .ok_or_else(|| {
+                                    ExecutionError::UnsupportedBinaryOperator(
+                                        "mul",
+                                        lhs.as_ref().try_into().unwrap_or(Value::Null),
+                                        rhs.as_ref().try_into().unwrap_or(Value::Null),
+                                    )
+                                })?
+                                .mul(rhs.as_ref())?;
+                            return Ok(Cow::Owned(own_cow(value)));
                         }
                         operators::MODULO => {
                             let lhs = Value::resolve_val(&call.args[0], ctx)?;
                             let rhs = Value::resolve_val(&call.args[1], ctx)?;
-                            return Ok(Cow::Owned(
-                                lhs.as_modder()
-                                    .ok_or_else(|| {
-                                        ExecutionError::UnsupportedBinaryOperator(
-                                            "rem",
-                                            lhs.as_ref().try_into().unwrap_or(Value::Null),
-                                            rhs.as_ref().try_into().unwrap_or(Value::Null),
-                                        )
-                                    })?
-                                    .modulo(rhs.as_ref())?
-                                    .into_owned(),
-                            ));
+                            let value = lhs
+                                .as_modder()
+                                .ok_or_else(|| {
+                                    ExecutionError::UnsupportedBinaryOperator(
+                                        "rem",
+                                        lhs.as_ref().try_into().unwrap_or(Value::Null),
+                                        rhs.as_ref().try_into().unwrap_or(Value::Null),
+                                    )
+                                })?
+                                .modulo(rhs.as_ref())?;
+                            return Ok(Cow::Owned(own_cow(value)));
                         }
                         operators::LESS => {
                             let lhs = Value::resolve_val(&call.args[0], ctx)?;
@@ -1495,22 +1513,34 @@ impl Value {
                             ))
                         } else {
                             // todo avoid cloning when not needed
-                            Ok(Cow::<dyn Val>::Owned(
-                                left.as_indexer()
+                            match left {
+                                Cow::Borrowed(left) => left
+                                    .as_indexer()
                                     .ok_or_else(|| {
                                         ExecutionError::NoSuchKey(Arc::new(key.inner().to_string()))
                                     })?
-                                    .get(&key)?
-                                    .into_owned(),
-                            ))
+                                    .get(&key),
+                                Cow::Owned(left) => left
+                                    .into_indexer()
+                                    .ok_or_else(|| {
+                                        ExecutionError::NoSuchKey(Arc::new(key.inner().to_string()))
+                                    })?
+                                    .steal(&key)
+                                    .map(Cow::<dyn Val>::Owned),
+                            }
                         }
                     }
-                    _ => Ok(Cow::<dyn Val>::Owned(
-                        left.as_indexer()
+                    _ => match left {
+                        Cow::Borrowed(left) => left
+                            .as_indexer()
                             .ok_or_else(|| ExecutionError::NoSuchOverload)?
-                            .get(&key)?
-                            .into_owned(),
-                    )),
+                            .get(&key),
+                        Cow::Owned(left) => left
+                            .into_indexer()
+                            .ok_or_else(|| ExecutionError::NoSuchOverload)?
+                            .steal(&key)
+                            .map(Cow::<dyn Val>::Owned),
+                    },
                 }
             }
             Expr::List(list_expr) => {
@@ -1524,10 +1554,10 @@ impl Value {
                                 if let Some(opt_val) = value.downcast_ref::<CelOptional>() {
                                     opt_val.inner().map(|v| v.clone_as_boxed())
                                 } else {
-                                    Some(value.into_owned())
+                                    Some(own_cow(value))
                                 }
                             } else {
-                                Some(value.into_owned())
+                                Some(own_cow(value))
                             }
                         })
                     })
@@ -1544,9 +1574,9 @@ impl Value {
                         EntryExpr::StructField(_) => panic!("WAT?"),
                         EntryExpr::MapEntry(e) => (&e.key, &e.value, e.optional),
                     };
-                    let key: CelMapKey = Value::resolve_val(k, ctx)?.into_owned().try_into()?;
+                    let key: CelMapKey = own_cow(Value::resolve_val(k, ctx)?).try_into()?;
                     // todo do not clone if not needed!
-                    let value = Value::resolve_val(v, ctx)?.into_owned();
+                    let value = own_cow(Value::resolve_val(v, ctx)?);
 
                     if is_optional {
                         if let Some(opt_val) = value.downcast_ref::<CelOptional>() {
@@ -1564,8 +1594,8 @@ impl Value {
                 Ok(Cow::<dyn Val>::Owned(map))
             }
             Expr::Comprehension(comprehension) => {
-                let accu_init = Value::resolve_val(&comprehension.accu_init, ctx)?;
-                let iter = Value::resolve_val(&comprehension.iter_range, ctx)?;
+                let accu_init = own_cow(Value::resolve_val(&comprehension.accu_init, ctx)?);
+                let iter = own_cow(Value::resolve_val(&comprehension.iter_range, ctx)?);
                 let mut ctx = ctx.new_inner_scope();
                 ctx.add_variable_as_val(&comprehension.accu_var, accu_init.clone_as_boxed());
 
@@ -1578,12 +1608,11 @@ impl Value {
                         break;
                     }
                     ctx.add_variable_as_val(&comprehension.iter_var, item.clone_as_boxed());
-                    let accu = Value::resolve_val(&comprehension.loop_step, &ctx)?;
-                    ctx.add_variable_as_val(&comprehension.accu_var, accu.clone_as_boxed());
+                    let accu = own_cow(Value::resolve_val(&comprehension.loop_step, &ctx)?);
+                    ctx.add_variable_as_val(&comprehension.accu_var, accu);
                 }
-                Ok(Cow::<dyn Val>::Owned(
-                    Value::resolve_val(&comprehension.result, &ctx)?.into_owned(),
-                ))
+                let result = own_cow(Value::resolve_val(&comprehension.result, &ctx)?);
+                Ok(Cow::<dyn Val>::Owned(result))
             }
             Expr::Struct(strct) => {
                 let name = strct.type_name.clone();
@@ -1627,6 +1656,10 @@ impl Value {
 
 fn bool<'a>(boolean: bool) -> Cow<'a, dyn Val> {
     Cow::<dyn Val>::Owned(Box::new(CelBool::from(boolean)))
+}
+
+fn own_cow<'a>(value: Cow<'a, dyn Val>) -> Box<dyn Val> {
+    value.as_ref().clone_as_boxed()
 }
 
 fn try_bool(val: Result<Cow<dyn Val>, ExecutionError>) -> Result<bool, ExecutionError> {
@@ -2227,9 +2260,21 @@ mod tests {
             fn as_val(&self) -> Option<&dyn Val> {
                 Some(self)
             }
+
+            fn to_owned_opaque(&self) -> Option<Arc<dyn Opaque>> {
+                Some(Arc::new(self.clone()))
+            }
         }
 
         impl Val for ProtoLike {
+            fn as_any(&self) -> Option<&dyn std::any::Any> {
+                Some(self)
+            }
+
+            fn as_opaque(&self) -> Option<&dyn Opaque> {
+                Some(self)
+            }
+
             fn get_type(&self) -> &Type {
                 &PROTO_LIKE_TYPE
             }
@@ -2264,14 +2309,14 @@ mod tests {
                     "id" => Box::new(CelInt::from(self.id)),
                     "name" => Box::new(CelString::from(self.name.as_str())),
                     "enabled" => Box::new(CelBool::from(self.enabled)),
-                    "nested" => Value::Opaque(Arc::new(self.nested.clone())).try_into()?,
+                    "nested" => return Ok(Cow::Borrowed(&self.nested)),
                     _ => return Err(ExecutionError::NoSuchKey(Arc::new(field.to_string()))),
                 };
                 Ok(Cow::Owned(value))
             }
 
             fn steal(self: Box<Self>, idx: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
-                self.get(idx).map(Cow::into_owned)
+                self.get(idx).map(|value| value.as_ref().clone_as_boxed())
             }
         }
 
@@ -2290,9 +2335,21 @@ mod tests {
             fn as_val(&self) -> Option<&dyn Val> {
                 Some(self)
             }
+
+            fn to_owned_opaque(&self) -> Option<Arc<dyn Opaque>> {
+                Some(Arc::new(self.clone()))
+            }
         }
 
         impl Val for ProtoLikeNested {
+            fn as_any(&self) -> Option<&dyn std::any::Any> {
+                Some(self)
+            }
+
+            fn as_opaque(&self) -> Option<&dyn Opaque> {
+                Some(self)
+            }
+
             fn get_type(&self) -> &Type {
                 &PROTO_NESTED_TYPE
             }
@@ -2333,7 +2390,7 @@ mod tests {
             }
 
             fn steal(self: Box<Self>, idx: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
-                self.get(idx).map(Cow::into_owned)
+                self.get(idx).map(|value| value.as_ref().clone_as_boxed())
             }
         }
 
@@ -2383,7 +2440,7 @@ mod tests {
         fn opaque_as_val_resolves_proto_like_fields() {
             let mut ctx = Context::default();
             let message = ProtoLike::sample();
-            ctx.add_variable_from_value("msg", Value::Opaque(Arc::new(message.clone())));
+            ctx.add_variable_ref("msg", &message);
 
             let cases = [
                 r#"msg.id == 42"#,
