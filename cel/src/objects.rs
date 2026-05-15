@@ -2205,6 +2205,67 @@ mod tests {
         assert!(result.is_err(), "Should error on missing map key");
     }
 
+    mod borrowed_variables {
+        use crate::{BytesRef, Context, Program, StrRef, Value};
+        use std::sync::Arc;
+
+        #[test]
+        fn str_ref_equality() {
+            let src = String::from("hello");
+            let mut ctx = Context::default();
+            ctx.add_variable_borrowed("greeting", StrRef::new(&src));
+            assert_eq!(
+                Program::compile(r#"greeting == "hello""#).unwrap().execute(&ctx),
+                Ok(Value::Bool(true))
+            );
+        }
+
+        #[test]
+        fn str_ref_concat() {
+            let src = String::from("hello");
+            let mut ctx = Context::default();
+            ctx.add_variable_borrowed("greeting", StrRef::new(&src));
+            assert_eq!(
+                Program::compile(r#"greeting + " world""#).unwrap().execute(&ctx),
+                Ok(Value::String(Arc::new("hello world".into())))
+            );
+        }
+
+        #[test]
+        fn str_ref_string_functions() {
+            let src = String::from("hello world");
+            let mut ctx = Context::default();
+            ctx.add_variable_borrowed("msg", StrRef::new(&src));
+            for (expr, expected) in [
+                (r#"msg.contains("world")"#, true),
+                (r#"msg.startsWith("hello")"#, true),
+                (r#"msg.endsWith("world")"#, true),
+                (r#"msg.size() == 11"#, true),
+            ] {
+                assert_eq!(
+                    Program::compile(expr).unwrap().execute(&ctx),
+                    Ok(Value::Bool(expected)),
+                    "{expr}"
+                );
+            }
+        }
+
+        #[test]
+        fn bytes_ref_size_and_concat() {
+            let data = vec![1u8, 2, 3];
+            let mut ctx = Context::default();
+            ctx.add_variable_borrowed("buf", BytesRef::new(&data));
+            assert_eq!(
+                Program::compile("buf.size() == 3").unwrap().execute(&ctx),
+                Ok(Value::Bool(true))
+            );
+            assert_eq!(
+                Program::compile("buf + buf").unwrap().execute(&ctx),
+                Ok(Value::Bytes(Arc::new(vec![1, 2, 3, 1, 2, 3])))
+            );
+        }
+    }
+
     mod opaque {
         use crate::common::traits::Indexer;
         use crate::common::types::{CelBool, CelInt, CelString, CelUInt, Type};
