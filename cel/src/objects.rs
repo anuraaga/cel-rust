@@ -1179,14 +1179,14 @@ impl Value {
                             };
                         }
                         operators::EQUALS => {
-                            let lhs = own_cow(Value::resolve_val(&call.args[0], ctx)?);
-                            let rhs = own_cow(Value::resolve_val(&call.args[1], ctx)?);
-                            return Ok(bool(lhs.eq(&rhs)));
+                            let lhs = Value::resolve_val(&call.args[0], ctx)?;
+                            let rhs = Value::resolve_val(&call.args[1], ctx)?;
+                            return Ok(bool(lhs.as_ref().equals(rhs.as_ref())));
                         }
                         operators::NOT_EQUALS => {
-                            let lhs = own_cow(Value::resolve_val(&call.args[0], ctx)?);
-                            let rhs = own_cow(Value::resolve_val(&call.args[1], ctx)?);
-                            return Ok(bool(lhs.ne(&rhs)));
+                            let lhs = Value::resolve_val(&call.args[0], ctx)?;
+                            let rhs = Value::resolve_val(&call.args[1], ctx)?;
+                            return Ok(bool(!lhs.as_ref().equals(rhs.as_ref())));
                         }
                         operators::INDEX | operators::OPT_INDEX => {
                             let mut is_optional = call.func_name == operators::OPT_INDEX;
@@ -1659,7 +1659,22 @@ fn bool<'a>(boolean: bool) -> Cow<'a, dyn Val> {
 }
 
 fn own_cow<'a>(value: Cow<'a, dyn Val>) -> Box<dyn Val> {
-    value.as_ref().clone_as_boxed()
+    match value {
+        // SAFETY: Every Cow::Owned produced by this evaluator holds a concrete
+        // type with no borrowed fields (CelInt, CelString, CelList, etc.).  The
+        // `dyn Val + 'a` lifetime annotation is a conservative upper-bound from
+        // the Cow type, not evidence of actual borrows.  Casting the fat pointer
+        // to `dyn Val + 'static` is sound because the vtable and heap allocation
+        // are unchanged; only the phantom lifetime marker is relaxed.
+        // A user-defined Opaque whose `Indexer::get` returns Cow::Owned with
+        // non-'static borrowed data would violate this precondition, but that is
+        // ruled out by the `Indexer` contract (steal returns Box<dyn Val>).
+        Cow::Owned(v) => unsafe {
+            // SAFETY: see block comment above
+            std::mem::transmute::<Box<dyn Val + 'a>, Box<dyn Val + 'static>>(v)
+        },
+        Cow::Borrowed(v) => v.clone_as_boxed(),
+    }
 }
 
 fn try_bool(val: Result<Cow<dyn Val>, ExecutionError>) -> Result<bool, ExecutionError> {

@@ -91,13 +91,13 @@ impl<'a> ToOwned for dyn Val + 'a {
     }
 }
 
-impl PartialEq for dyn Val {
+impl<'a> PartialEq for dyn Val + 'a {
     fn eq(&self, other: &Self) -> bool {
         self.equals(other)
     }
 }
 
-impl Eq for dyn Val {}
+impl<'a> Eq for dyn Val + 'a {}
 
 #[cfg(test)]
 mod test {
