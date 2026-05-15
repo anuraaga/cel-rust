@@ -140,7 +140,7 @@ fn bytes_to_bytes<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, E
 
 fn string_to_bytes<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionError> {
     let mut args = args;
-    let arg = args.remove(0).into_owned();
+    let arg = args.remove(0);
     match arg.downcast_ref::<CelString>() {
         Some(arg) => {
             let value = arg.inner().as_bytes().to_vec();

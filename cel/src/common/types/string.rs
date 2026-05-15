@@ -201,12 +201,15 @@ fn matches<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, Executio
 
 fn string<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionError> {
     let mut args = args;
-    let arg = args.remove(0).into_owned();
+    let arg = args.remove(0);
+
+    // Fast path: already a string — return without any clone.
+    if arg.get_type().kind() == Kind::String {
+        return Ok(arg);
+    }
+
+    let arg = arg.into_owned();
     let ret: Result<Box<String>, Box<dyn Val>> = match arg.get_type().kind() {
-        Kind::String => match arg.downcast_ref::<String>() {
-            Some(arg) => Ok(Box::new(arg.clone())),
-            None => Err(arg),
-        },
         Kind::Int => match arg.downcast_ref::<CelInt>() {
             Some(arg) => Ok(Box::new(String::from(arg.to_string()))),
             None => Err(arg),

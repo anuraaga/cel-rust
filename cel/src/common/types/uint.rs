@@ -253,12 +253,15 @@ impl<'a> TryFrom<&'a dyn Val> for &'a u64 {
 
 fn uint<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionError> {
     let mut args = args;
-    let arg = args.remove(0).into_owned();
+    let arg = args.remove(0);
+
+    // Fast path: already a uint — return without any clone.
+    if arg.get_type().kind() == Kind::UInt {
+        return Ok(arg);
+    }
+
+    let arg = arg.into_owned();
     let ret: Result<Box<UInt>, Box<dyn Val>> = match arg.get_type().kind() {
-        Kind::UInt => match arg.downcast_ref::<UInt>() {
-            Some(arg) => Ok(Box::new(*arg)),
-            None => Err(arg),
-        },
         Kind::Int => match arg.downcast_ref::<CelInt>() {
             Some(arg) => Ok(Box::new(UInt::from(*arg.inner() as u64))),
             None => Err(arg),

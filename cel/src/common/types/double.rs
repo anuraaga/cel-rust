@@ -202,12 +202,15 @@ impl<'a> TryFrom<&'a dyn Val> for &'a f64 {
 
 fn double<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionError> {
     let mut args = args;
-    let arg = args.remove(0).into_owned();
+    let arg = args.remove(0);
+
+    // Fast path: already a double — return without any clone.
+    if arg.get_type().kind() == Kind::Double {
+        return Ok(arg);
+    }
+
+    let arg = arg.into_owned();
     let ret: Result<Box<Double>, Box<dyn Val>> = match arg.get_type().kind() {
-        Kind::Double => match arg.downcast_ref::<Double>() {
-            Some(arg) => Ok(Box::new(*arg)),
-            None => Err(arg),
-        },
         Kind::Int => match arg.downcast_ref::<CelInt>() {
             Some(arg) => Ok(Box::new(Double::from(*arg.inner() as f64))),
             None => Err(arg),

@@ -232,12 +232,15 @@ impl<'a> TryFrom<&'a dyn Val> for &'a i64 {
 
 fn int<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionError> {
     let mut args = args;
-    let arg = args.remove(0).into_owned();
+    let arg = args.remove(0);
+
+    // Fast path: already an int — return without any clone.
+    if arg.get_type().kind() == Kind::Int {
+        return Ok(arg);
+    }
+
+    let arg = arg.into_owned();
     let ret: Result<Box<Int>, Box<dyn Val>> = match arg.get_type().kind() {
-        Kind::Int => match arg.downcast_ref::<Int>() {
-            Some(arg) => Ok(Box::new(*arg)),
-            None => Err(arg),
-        },
         Kind::UInt => match arg.downcast_ref::<CelUInt>() {
             Some(arg) => Ok(Box::new(Int::from(*arg.inner() as i64))),
             None => Err(arg),
