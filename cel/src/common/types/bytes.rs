@@ -1,10 +1,10 @@
 use crate::common::traits::{Sizer, Zeroer};
 use crate::common::types::{CelInt, Type};
 use crate::common::value::Val;
-use crate::Value;
 use crate::{common::traits, ExecutionError};
 use std::borrow::Cow;
 use std::ops::Deref;
+use super::bytes_ref::{bytes_concat, BytesRef};
 use traits::{Adder, Comparer};
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -58,7 +58,7 @@ impl Val for Bytes {
     }
 
     fn equals(&self, other: &dyn Val) -> bool {
-        other.as_bytes_ref().is_some_and(|b| self.0.as_slice() == b)
+        BytesRef(self.inner()).equals(other)
     }
 
     fn clone_as_boxed(&self) -> Box<dyn Val> {
@@ -68,40 +68,25 @@ impl Val for Bytes {
 
 impl Adder for Bytes {
     fn add<'a>(&'a self, other: &dyn Val) -> Result<Cow<'a, dyn Val>, crate::ExecutionError> {
-        if let Some(bytes) = other.as_bytes_ref() {
-            let mut v = Vec::with_capacity(self.0.len() + bytes.len());
-            v.extend_from_slice(&self.0);
-            v.extend_from_slice(bytes);
-            Ok(Cow::<dyn Val>::Owned(Box::new(Bytes(v))))
-        } else {
-            Err(crate::ExecutionError::UnsupportedBinaryOperator(
-                "add",
-                (self as &dyn Val).try_into().unwrap_or(Value::Null),
-                other.try_into().unwrap_or(Value::Null),
-            ))
-        }
+        bytes_concat(self.inner(), other).map(Cow::<dyn Val>::Owned)
     }
 }
 
 impl Comparer for Bytes {
     fn compare(&self, other: &dyn Val) -> Result<std::cmp::Ordering, crate::ExecutionError> {
-        if let Some(bytes) = other.as_bytes_ref() {
-            Ok(self.0.as_slice().cmp(bytes))
-        } else {
-            Err(crate::ExecutionError::NoSuchOverload)
-        }
+        BytesRef(self.inner()).compare(other)
     }
 }
 
 impl Sizer for Bytes {
     fn size(&self) -> CelInt {
-        (self.inner().len() as i64).into()
+        BytesRef(self.inner()).size()
     }
 }
 
 impl Zeroer for Bytes {
     fn is_zero_value(&self) -> bool {
-        self.inner().is_empty()
+        BytesRef(self.inner()).is_zero_value()
     }
 }
 

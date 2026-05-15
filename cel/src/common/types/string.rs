@@ -1,4 +1,5 @@
 use crate::common::traits::{self, Adder, Comparer, Sizer, Zeroer};
+use super::str_ref::{str_concat, StrRef};
 use crate::common::types::{CelBool, CelDouble, CelInt, CelUInt, Kind, Type};
 #[cfg(feature = "chrono")]
 use crate::common::types::{CelDuration, CelTimestamp};
@@ -60,7 +61,7 @@ impl Val for String {
     }
 
     fn equals(&self, other: &dyn Val) -> bool {
-        other.as_str_ref().is_some_and(|s| s == self.inner())
+        StrRef(self.inner()).equals(other)
     }
 
     fn clone_as_boxed(&self) -> Box<dyn Val> {
@@ -70,40 +71,25 @@ impl Val for String {
 
 impl Adder for String {
     fn add<'a>(&'a self, rhs: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        if let Some(rhs) = rhs.as_str_ref() {
-            let mut s = StdString::with_capacity(rhs.len() + self.0.len());
-            s.push_str(&self.0);
-            s.push_str(rhs);
-            Ok(Cow::<dyn Val>::Owned(Box::new(Self(s))))
-        } else {
-            Err(ExecutionError::UnsupportedBinaryOperator(
-                "add",
-                (self as &dyn Val).try_into()?,
-                rhs.try_into()?,
-            ))
-        }
+        str_concat(self.inner(), rhs).map(Cow::<dyn Val>::Owned)
     }
 }
 
 impl Comparer for String {
     fn compare(&self, rhs: &dyn Val) -> Result<Ordering, ExecutionError> {
-        if let Some(rhs) = rhs.as_str_ref() {
-            Ok(self.inner().cmp(rhs))
-        } else {
-            Err(ExecutionError::NoSuchOverload)
-        }
+        StrRef(self.inner()).compare(rhs)
     }
 }
 
 impl Sizer for String {
     fn size(&self) -> CelInt {
-        (self.inner().len() as i64).into()
+        StrRef(self.inner()).size()
     }
 }
 
 impl Zeroer for String {
     fn is_zero_value(&self) -> bool {
-        self.inner().is_empty()
+        StrRef(self.inner()).is_zero_value()
     }
 }
 

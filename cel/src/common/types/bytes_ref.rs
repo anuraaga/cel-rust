@@ -13,6 +13,7 @@ use crate::ExecutionError;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
+use std::sync::Arc;
 
 /// A zero-copy, borrowed bytes CEL value.
 #[derive(Debug)]
@@ -73,20 +74,26 @@ impl<'a> Val for BytesRef<'a> {
     }
 }
 
+/// Shared bytes-concatenation logic used by both [`BytesRef::add`] and
+/// [`super::bytes::Bytes`]'s `Adder` impl.
+pub(crate) fn bytes_concat(lhs: &[u8], rhs: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
+    if let Some(rhs_bytes) = rhs.as_bytes_ref() {
+        let mut v = Vec::with_capacity(lhs.len() + rhs_bytes.len());
+        v.extend_from_slice(lhs);
+        v.extend_from_slice(rhs_bytes);
+        Ok(Box::new(CelBytes::from(v)))
+    } else {
+        Err(ExecutionError::UnsupportedBinaryOperator(
+            "add",
+            crate::Value::Bytes(Arc::new(lhs.to_vec())),
+            rhs.try_into().unwrap_or(crate::Value::Null),
+        ))
+    }
+}
+
 impl<'s> Adder for BytesRef<'s> {
     fn add<'a>(&'a self, other: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        if let Some(rhs) = other.as_bytes_ref() {
-            let mut v = Vec::with_capacity(self.0.len() + rhs.len());
-            v.extend_from_slice(self.0);
-            v.extend_from_slice(rhs);
-            Ok(Cow::<dyn Val>::Owned(Box::new(CelBytes::from(v))))
-        } else {
-            Err(ExecutionError::UnsupportedBinaryOperator(
-                "add",
-                (self as &dyn Val).try_into().unwrap_or(crate::Value::Null),
-                other.try_into().unwrap_or(crate::Value::Null),
-            ))
-        }
+        bytes_concat(self.0, other).map(Cow::<dyn Val>::Owned)
     }
 }
 

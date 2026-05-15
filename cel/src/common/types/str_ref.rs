@@ -25,6 +25,7 @@ use crate::ExecutionError;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
+use std::sync::Arc;
 
 /// A zero-copy, borrowed string CEL value.
 #[derive(Debug)]
@@ -85,20 +86,27 @@ impl<'a> Val for StrRef<'a> {
     }
 }
 
+/// Shared string-concatenation logic used by both [`StrRef::add`] and
+/// [`super::string::String`]'s `Adder` impl. Returns an owned `Box<dyn Val>`
+/// so callers can wrap it in `Cow::Owned` without lifetime constraints.
+pub(crate) fn str_concat(lhs: &str, rhs: &dyn Val) -> Result<Box<dyn Val>, ExecutionError> {
+    if let Some(rhs_str) = rhs.as_str_ref() {
+        let mut s = std::string::String::with_capacity(lhs.len() + rhs_str.len());
+        s.push_str(lhs);
+        s.push_str(rhs_str);
+        Ok(Box::new(CelString::from(s)))
+    } else {
+        Err(ExecutionError::UnsupportedBinaryOperator(
+            "add",
+            crate::Value::String(Arc::new(lhs.to_string())),
+            rhs.try_into().unwrap_or(crate::Value::Null),
+        ))
+    }
+}
+
 impl<'s> Adder for StrRef<'s> {
     fn add<'a>(&'a self, rhs: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        if let Some(rhs_str) = rhs.as_str_ref() {
-            let mut s = String::with_capacity(self.0.len() + rhs_str.len());
-            s.push_str(self.0);
-            s.push_str(rhs_str);
-            Ok(Cow::<dyn Val>::Owned(Box::new(CelString::from(s))))
-        } else {
-            Err(ExecutionError::UnsupportedBinaryOperator(
-                "add",
-                (self as &dyn Val).try_into().unwrap_or(crate::Value::Null),
-                rhs.try_into().unwrap_or(crate::Value::Null),
-            ))
-        }
+        str_concat(self.0, rhs).map(Cow::<dyn Val>::Owned)
     }
 }
 
