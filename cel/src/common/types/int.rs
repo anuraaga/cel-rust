@@ -1,6 +1,6 @@
 use crate::common::traits::Negator;
 use crate::common::traits::{self, Comparer};
-use crate::common::types::{CelDouble, CelString, CelUInt, Kind, Type};
+use crate::common::types::{CelDouble, CelUInt, Kind, Type};
 use crate::common::value::Val;
 use crate::ExecutionError;
 use std::borrow::Cow;
@@ -249,18 +249,19 @@ fn int<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionErr
             Some(arg) => Ok(Box::new(Int::from(*arg.inner() as i64))),
             None => Err(arg),
         },
-        Kind::String => match arg.downcast_ref::<CelString>() {
-            None => Err(arg),
-            Some(arg) => match arg.inner().parse::<i64>() {
-                Ok(arg) => Ok(Box::new(Int::from(arg))),
-                Err(e) => {
+        Kind::String => {
+            let parsed = arg.as_str_ref().map(|s| s.parse::<i64>());
+            match parsed {
+                None => Err(arg),
+                Some(Ok(n)) => Ok(Box::new(Int::from(n))),
+                Some(Err(e)) => {
                     return Err(ExecutionError::FunctionError {
                         function: "int".to_owned(),
                         message: format!("string parse error: {e}"),
                     })
                 }
-            },
-        },
+            }
+        }
         _ => Err(arg),
     };
 

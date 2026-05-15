@@ -44,14 +44,12 @@ const EXPRESSIONS: [(&str, &str); 34] = [
 struct Resolver;
 
 impl VariableResolver for Resolver {
-    fn resolve(&self, expr: &str) -> Option<Value> {
-        const V: Value = Value::Bool(false);
-        const NOT_V: Value = Value::Bool(true);
+    fn resolve<'a>(&'a self, expr: &str) -> Option<std::borrow::Cow<'a, dyn cel::common::value::Val>> {
+        use cel::common::types::{CelBool};
+        use std::borrow::Cow;
         match expr {
-            "fruit" => Some(NOT_V),
-            "carrot" => Some(NOT_V),
-            "orange" => Some(NOT_V),
-            "banana" => Some(V),
+            "fruit" | "carrot" | "orange" => Some(Cow::<dyn cel::common::value::Val>::Owned(Box::new(CelBool::from(true)))),
+            "banana" => Some(Cow::<dyn cel::common::value::Val>::Owned(Box::new(CelBool::from(false)))),
             _ => None,
         }
     }

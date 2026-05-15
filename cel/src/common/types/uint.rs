@@ -1,5 +1,5 @@
 use crate::common::traits::{Adder, Comparer, Divider, Modder, Multiplier, Subtractor, Zeroer};
-use crate::common::types::{CelDouble, CelInt, CelString, Kind, Type};
+use crate::common::types::{CelDouble, CelInt, Kind, Type};
 use crate::common::value::Val;
 use crate::{ExecutionError, Value};
 use std::borrow::Cow;
@@ -270,18 +270,19 @@ fn uint<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionEr
             Some(arg) => Ok(Box::new(UInt::from(*arg.inner() as u64))),
             None => Err(arg),
         },
-        Kind::String => match arg.downcast_ref::<CelString>() {
-            None => Err(arg),
-            Some(arg) => match arg.inner().parse::<u64>() {
-                Ok(arg) => Ok(Box::new(UInt::from(arg))),
-                Err(e) => {
+        Kind::String => {
+            let parsed = arg.as_str_ref().map(|s| s.parse::<u64>());
+            match parsed {
+                None => Err(arg),
+                Some(Ok(n)) => Ok(Box::new(UInt::from(n))),
+                Some(Err(e)) => {
                     return Err(ExecutionError::FunctionError {
                         function: "int".to_owned(),
                         message: format!("string parse error: {e}"),
                     })
                 }
-            },
-        },
+            }
+        }
         _ => Err(arg),
     };
 

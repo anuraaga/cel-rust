@@ -1,5 +1,5 @@
 use crate::common::traits::{Adder, Comparer, Divider, Multiplier, Negator, Subtractor, Zeroer};
-use crate::common::types::{CelInt, CelString, CelUInt, Kind, Type};
+use crate::common::types::{CelInt, CelUInt, Kind, Type};
 use crate::common::value::Val;
 use crate::{ExecutionError, Value};
 use std::borrow::Cow;
@@ -219,18 +219,19 @@ fn double<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, Execution
             Some(arg) => Ok(Box::new(Double::from(*arg.inner() as f64))),
             None => Err(arg),
         },
-        Kind::String => match arg.downcast_ref::<CelString>() {
-            None => Err(arg),
-            Some(arg) => match arg.inner().parse::<f64>() {
-                Ok(arg) => Ok(Box::new(Double::from(arg))),
-                Err(e) => {
+        Kind::String => {
+            let parsed = arg.as_str_ref().map(|s| s.parse::<f64>());
+            match parsed {
+                None => Err(arg),
+                Some(Ok(n)) => Ok(Box::new(Double::from(n))),
+                Some(Err(e)) => {
                     return Err(ExecutionError::FunctionError {
                         function: "double".to_owned(),
                         message: format!("string parse error: {e}"),
                     })
                 }
-            },
-        },
+            }
+        }
         _ => Err(arg),
     };
 

@@ -971,11 +971,11 @@ impl TryFrom<&dyn Val> for Value {
                 *v.downcast_ref::<CelDouble>().unwrap().inner(),
             )),
             Kind::String => Ok(Value::String(Arc::new(
-                v.downcast_ref::<CelString>().unwrap().inner().to_string(),
+                v.as_str_ref().unwrap().to_string(),
             ))),
             Kind::NullType => Ok(Value::Null),
             Kind::Bytes => Ok(Value::Bytes(Arc::new(
-                v.downcast_ref::<CelBytes>().unwrap().inner().to_vec(),
+                v.as_bytes_ref().unwrap().to_vec(),
             ))),
             #[cfg(feature = "chrono")]
             Kind::Duration => Ok(Value::Duration(
@@ -1232,17 +1232,13 @@ impl Value {
                         operators::OPT_SELECT => {
                             let operand = Value::resolve_val(&call.args[0], ctx)?;
                             let field_literal = Value::resolve_val(&call.args[1], ctx)?;
-                            let field = match field_literal.get_type().kind() {
-                                Kind::String => field_literal
-                                    .downcast_ref::<CelString>()
-                                    .expect("field must be string"),
-                                _ => {
-                                    return Err(ExecutionError::function_error(
-                                        "_?._",
-                                        "field must be string",
-                                    ))
-                                }
-                            };
+                            if field_literal.as_str_ref().is_none() {
+                                return Err(ExecutionError::function_error(
+                                    "_?._",
+                                    "field must be string",
+                                ));
+                            }
+                            let field = field_literal.as_ref();
                             return Ok(Cow::<dyn Val>::Owned(Box::new(
                                 if let Some(opt) = operand.as_ref().downcast_ref::<CelOptional>() {
                                     opt.map(|operand| {
@@ -2316,9 +2312,8 @@ mod tests {
         impl Indexer for ProtoLike {
             fn get<'a>(&'a self, idx: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
                 let field = idx
-                    .downcast_ref::<CelString>()
-                    .ok_or(ExecutionError::NoSuchOverload)?
-                    .inner();
+                    .as_str_ref()
+                    .ok_or(ExecutionError::NoSuchOverload)?;
 
                 let value: Box<dyn Val> = match field {
                     "id" => Box::new(CelInt::from(self.id)),
@@ -2391,9 +2386,8 @@ mod tests {
         impl Indexer for ProtoLikeNested {
             fn get<'a>(&'a self, idx: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
                 let field = idx
-                    .downcast_ref::<CelString>()
-                    .ok_or(ExecutionError::NoSuchOverload)?
-                    .inner();
+                    .as_str_ref()
+                    .ok_or(ExecutionError::NoSuchOverload)?;
 
                 let value: Box<dyn Val> = match field {
                     "label" => Box::new(CelString::from(self.label.as_str())),
@@ -2453,8 +2447,8 @@ mod tests {
 
         #[test]
         fn opaque_as_val_resolves_proto_like_fields() {
-            let mut ctx = Context::default();
             let message = ProtoLike::sample();
+            let mut ctx = Context::default();
             ctx.add_variable_ref("msg", &message);
 
             let cases = [
@@ -2477,7 +2471,7 @@ mod tests {
 
             assert_eq!(
                 Program::compile("msg.nested").unwrap().execute(&ctx),
-                Ok(Value::Opaque(Arc::new(message.nested)))
+                Ok(Value::Opaque(Arc::new(message.nested.clone())))
             );
         }
 

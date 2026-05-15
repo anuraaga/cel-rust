@@ -1,5 +1,5 @@
 use crate::common::traits::{Sizer, Zeroer};
-use crate::common::types::{CelInt, CelString, Type};
+use crate::common::types::{CelInt, Type};
 use crate::common::value::Val;
 use crate::Value;
 use crate::{common::traits, ExecutionError};
@@ -53,10 +53,12 @@ impl Val for Bytes {
         Some(self)
     }
 
+    fn as_bytes_ref(&self) -> Option<&[u8]> {
+        Some(self.inner())
+    }
+
     fn equals(&self, other: &dyn Val) -> bool {
-        other
-            .downcast_ref::<Self>()
-            .is_some_and(|a| self.0.eq(&a.0))
+        other.as_bytes_ref().is_some_and(|b| self.0.as_slice() == b)
     }
 
     fn clone_as_boxed(&self) -> Box<dyn Val> {
@@ -66,10 +68,11 @@ impl Val for Bytes {
 
 impl Adder for Bytes {
     fn add<'a>(&'a self, other: &dyn Val) -> Result<Cow<'a, dyn Val>, crate::ExecutionError> {
-        if let Some(bytes) = other.downcast_ref::<Bytes>() {
-            Ok(Cow::<dyn Val>::Owned(Box::new(Bytes(
-                self.0.clone().into_iter().chain(bytes.0.clone()).collect(),
-            ))))
+        if let Some(bytes) = other.as_bytes_ref() {
+            let mut v = Vec::with_capacity(self.0.len() + bytes.len());
+            v.extend_from_slice(&self.0);
+            v.extend_from_slice(bytes);
+            Ok(Cow::<dyn Val>::Owned(Box::new(Bytes(v))))
         } else {
             Err(crate::ExecutionError::UnsupportedBinaryOperator(
                 "add",
@@ -82,8 +85,8 @@ impl Adder for Bytes {
 
 impl Comparer for Bytes {
     fn compare(&self, other: &dyn Val) -> Result<std::cmp::Ordering, crate::ExecutionError> {
-        if let Some(bytes) = other.downcast_ref::<Bytes>() {
-            Ok(self.0.cmp(&bytes.0))
+        if let Some(bytes) = other.as_bytes_ref() {
+            Ok(self.0.as_slice().cmp(bytes))
         } else {
             Err(crate::ExecutionError::NoSuchOverload)
         }
@@ -126,10 +129,7 @@ impl<'a> TryFrom<&'a dyn Val> for &'a [u8] {
     type Error = &'a dyn Val;
 
     fn try_from(value: &'a dyn Val) -> Result<Self, Self::Error> {
-        if let Some(bytes) = value.downcast_ref::<Bytes>() {
-            return Ok(bytes.inner());
-        }
-        Err(value)
+        value.as_bytes_ref().ok_or(value)
     }
 }
 
@@ -141,9 +141,9 @@ fn bytes_to_bytes<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, E
 fn string_to_bytes<'a>(args: Vec<Cow<'a, dyn Val>>) -> Result<Cow<'a, dyn Val>, ExecutionError> {
     let mut args = args;
     let arg = args.remove(0);
-    match arg.downcast_ref::<CelString>() {
-        Some(arg) => {
-            let value = arg.inner().as_bytes().to_vec();
+    match arg.as_str_ref() {
+        Some(s) => {
+            let value = s.as_bytes().to_vec();
             Ok(Cow::<dyn Val>::Owned(Box::new(Bytes::from(value))))
         }
         None => Err(ExecutionError::UnexpectedType {

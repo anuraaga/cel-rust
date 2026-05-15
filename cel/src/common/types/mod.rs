@@ -5,6 +5,7 @@ use std::borrow::Cow;
 
 pub(crate) mod bool;
 pub(crate) mod bytes;
+pub(crate) mod bytes_ref;
 pub(crate) mod double;
 #[cfg(feature = "chrono")]
 pub(crate) mod duration;
@@ -14,6 +15,7 @@ pub(crate) mod map;
 mod null;
 pub(crate) mod optional;
 pub(crate) mod string;
+pub(crate) mod str_ref;
 #[cfg(feature = "structs")]
 pub(crate) mod r#struct;
 #[cfg(feature = "chrono")]
@@ -24,6 +26,7 @@ use crate::common::traits::TraitSet;
 use crate::common::value::Val;
 pub use bool::Bool as CelBool;
 pub use bytes::Bytes as CelBytes;
+pub use bytes_ref::BytesRef;
 pub use double::Double as CelDouble;
 #[cfg(feature = "chrono")]
 pub use duration::Duration as CelDuration;
@@ -35,6 +38,7 @@ pub use null::Null as CelNull;
 pub use optional::Optional as CelOptional;
 #[cfg(feature = "structs")]
 pub use r#struct::Struct as CelStruct;
+pub use str_ref::StrRef;
 pub use string::String as CelString;
 #[cfg(feature = "chrono")]
 pub use timestamp::Timestamp as CelTimestamp;
@@ -364,7 +368,6 @@ fn cast_boxed<T: Val + Any>(value: Box<dyn Val>) -> Result<Box<T>, Box<dyn Val>>
 }
 
 type UnaryFn<A> = fn(&A) -> Result<Box<dyn Val>, ExecutionError>;
-type BinaryFn<A, B> = fn(&A, &B) -> Result<Box<dyn Val>, ExecutionError>;
 
 fn unary_fn<'a, A: Val + 'static>(
     args: Vec<Cow<'a, dyn Val>>,
@@ -378,29 +381,6 @@ fn unary_fn<'a, A: Val + 'static>(
             want: type_a.name().to_string(),
         }),
         Some(arg) => Ok(Cow::<dyn Val>::Owned(func(arg)?)),
-    }
-}
-
-fn binary_fn<'a, A: Val + 'static, B: Val + 'static>(
-    args: Vec<Cow<'a, dyn Val>>,
-    type_a: Type,
-    type_b: Type,
-    func: BinaryFn<A, B>,
-) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-    let arg1 = &args[0];
-    let arg2 = &args[1];
-    match arg1.downcast_ref::<A>() {
-        None => Err(ExecutionError::UnexpectedType {
-            got: arg1.get_type().name().to_string(),
-            want: type_a.name().to_string(),
-        }),
-        Some(arg1) => match arg2.downcast_ref::<B>() {
-            None => Err(ExecutionError::UnexpectedType {
-                got: arg2.get_type().name().to_string(),
-                want: type_b.name().to_string(),
-            }),
-            Some(arg2) => Ok(Cow::<dyn Val>::Owned(func(arg1, arg2)?)),
-        },
     }
 }
 

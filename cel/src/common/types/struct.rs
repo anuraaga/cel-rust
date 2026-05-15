@@ -81,12 +81,10 @@ impl Val for Struct {
 
 impl Indexer for Struct {
     fn get<'a>(&'a self, idx: &dyn Val) -> Result<Cow<'a, dyn Val>, crate::ExecutionError> {
-        if let Some(field) = idx.downcast_ref::<CelString>() {
-            self.field_value(field.inner())
+        if let Some(field) = idx.as_str_ref() {
+            self.field_value(field)
                 .map(Cow::Borrowed)
-                .ok_or(ExecutionError::NoSuchKey(Arc::new(String::from(
-                    field.inner(),
-                ))))
+                .ok_or(ExecutionError::NoSuchKey(Arc::new(String::from(field))))
         } else {
             Err(ExecutionError::UnsupportedIndex(
                 idx.try_into()?,

@@ -70,6 +70,20 @@ pub trait Val: Debug + Send + Sync {
         None
     }
 
+    /// Returns a borrowed `&str` if this value is a string-typed `Val`.
+    /// Implemented by both `CelString` and the zero-copy `StrRef<'_>`,
+    /// bypassing the `Any: 'static` constraint.
+    fn as_str_ref(&self) -> Option<&str> {
+        None
+    }
+
+    /// Returns a borrowed `&[u8]` if this value is a bytes-typed `Val`.
+    /// Implemented by both `Bytes` and the zero-copy `BytesRef<'_>`,
+    /// bypassing the `Any: 'static` constraint.
+    fn as_bytes_ref(&self) -> Option<&[u8]> {
+        None
+    }
+
     fn equals(&self, _other: &dyn Val) -> bool {
         false
     }

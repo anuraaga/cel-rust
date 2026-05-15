@@ -83,8 +83,9 @@ impl Val for DefaultMap {
 
 impl Container for DefaultMap {
     fn contains(&self, key: &dyn Val) -> Result<bool, ExecutionError> {
-        if let Some(s) = key.downcast_ref::<CelString>() {
-            Ok(self.0.contains_key(s as &dyn AsKeyRef))
+        if let Some(s) = key.as_str_ref() {
+            let kr = KeyRef::String(s);
+            Ok(self.0.contains_key(&kr as &dyn AsKeyRef))
         } else if let Some(i) = key.downcast_ref::<CelInt>() {
             Ok(self.0.contains_key(i as &dyn AsKeyRef))
         } else if let Some(u) = key.downcast_ref::<CelUInt>() {
@@ -100,9 +101,15 @@ impl Container for DefaultMap {
 
 impl Indexer for DefaultMap {
     fn get<'a>(&'a self, key: &dyn Val) -> Result<Cow<'a, dyn Val>, ExecutionError> {
-        let k = if let Some(s) = key.downcast_ref::<CelString>() {
-            s as &dyn AsKeyRef
-        } else if let Some(i) = key.downcast_ref::<CelInt>() {
+        if let Some(s) = key.as_str_ref() {
+            let kr = KeyRef::String(s);
+            return self
+                .0
+                .get(&kr as &dyn AsKeyRef)
+                .map(|v| Cow::Borrowed(v.as_ref()))
+                .ok_or_else(|| ExecutionError::NoSuchKey(Arc::new(s.to_string())));
+        }
+        let k: &dyn AsKeyRef = if let Some(i) = key.downcast_ref::<CelInt>() {
             i as &dyn AsKeyRef
         } else if let Some(u) = key.downcast_ref::<CelUInt>() {
             u as &dyn AsKeyRef

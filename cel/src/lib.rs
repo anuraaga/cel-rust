@@ -14,6 +14,7 @@ pub mod parser;
 pub use common::ast::IdedExpr;
 use common::ast::SelectExpr;
 pub use context::Context;
+pub use context::StoredValue;
 pub use functions::FunctionContext;
 pub use objects::{ResolveResult, Value};
 use parser::{Expression, ExpressionReferences, Parser};
@@ -29,6 +30,7 @@ mod duration;
 pub use ser::{Duration, Timestamp};
 
 pub use env::Env;
+pub use common::types::{BytesRef, StrRef};
 #[cfg(feature = "structs")]
 pub use env::StructDef;
 
